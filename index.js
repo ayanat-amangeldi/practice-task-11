@@ -6,11 +6,25 @@ const { MongoClient, ObjectId } = require("mongodb");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
+const API_KEY = process.env.API_KEY;
 
 app.use(express.json());
 
-const DB_NAME = "shop";
+function apiKeyAuth(req, res, next) {
+  const key = req.headers["x-api-key"];
 
+  if (!key) {
+    return res.status(401).json({ error: "API key required" });
+  }
+
+  if (key !== API_KEY) {
+    return res.status(403).json({ error: "Invalid API key" });
+  }
+
+  next();
+}
+
+const DB_NAME = "shop";
 let db;
 
 MongoClient.connect(MONGO_URI)
@@ -29,80 +43,9 @@ app.get("/", (req, res) => {
 app.get("/version", (req, res) => {
   res.json({
     version: "1.1",
-    updatedAt: "2026-01-18"
+    updatedAt: "2026-01-18",
   });
 });
-
-/* PRODUCTS */
-
-app.get("/api/products", async (req, res) => {
-  const { category, minPrice, sort, fields } = req.query;
-
-  const filter = {};
-  if (category) filter.category = category;
-  if (minPrice) filter.price = { $gte: Number(minPrice) };
-
-  const sortOption = {};
-  if (sort === "price") sortOption.price = 1;
-
-  let projection = {};
-  if (fields) {
-    fields.split(",").forEach((f) => (projection[f] = 1));
-  }
-
-  const result = await db
-    .collection("products")
-    .find(filter, { projection })
-    .sort(sortOption)
-    .toArray();
-
-  res.json({ count: result.length, products: result });
-});
-
-app.post("/api/products", async (req, res) => {
-  const { name, price, category } = req.body;
-  if (!name || price === undefined || !category)
-    return res.status(400).json({ error: "Missing fields" });
-
-  const result = await db
-    .collection("products")
-    .insertOne({ name, price, category });
-
-  res.status(201).json({ id: result.insertedId });
-});
-
-app.get("/api/products/:id", async (req, res) => {
-  try {
-    const product = await db.collection("products").findOne({
-      _id: new ObjectId(req.params.id),
-    });
-    if (!product) return res.status(404).json({ error: "Not found" });
-    res.json(product);
-  } catch {
-    res.status(400).json({ error: "Invalid ID" });
-  }
-});
-
-app.put("/api/products/:id", async (req, res) => {
-  const result = await db.collection("products").updateOne(
-    { _id: new ObjectId(req.params.id) },
-    { $set: req.body }
-  );
-  if (!result.matchedCount)
-    return res.status(404).json({ error: "Not found" });
-  res.json({ message: "Updated" });
-});
-
-app.delete("/api/products/:id", async (req, res) => {
-  const result = await db.collection("products").deleteOne({
-    _id: new ObjectId(req.params.id),
-  });
-  if (!result.deletedCount)
-    return res.status(404).json({ error: "Not found" });
-  res.json({ message: "Deleted" });
-});
-
-
 
 app.get("/api/items", async (req, res) => {
   const items = await db.collection("items").find().toArray();
@@ -121,7 +64,7 @@ app.get("/api/items/:id", async (req, res) => {
   }
 });
 
-app.post("/api/items", async (req, res) => {
+app.post("/api/items", apiKeyAuth, async (req, res) => {
   const { name, price } = req.body;
   if (!name || price === undefined)
     return res.status(400).json({ error: "Missing fields" });
@@ -130,7 +73,7 @@ app.post("/api/items", async (req, res) => {
   res.status(201).json({ id: result.insertedId });
 });
 
-app.put("/api/items/:id", async (req, res) => {
+app.put("/api/items/:id", apiKeyAuth, async (req, res) => {
   const { name, price } = req.body;
   if (!name || price === undefined)
     return res.status(400).json({ error: "Missing fields" });
@@ -144,7 +87,7 @@ app.put("/api/items/:id", async (req, res) => {
   res.json({ message: "Updated" });
 });
 
-app.patch("/api/items/:id", async (req, res) => {
+app.patch("/api/items/:id", apiKeyAuth, async (req, res) => {
   const result = await db.collection("items").updateOne(
     { _id: new ObjectId(req.params.id) },
     { $set: req.body }
@@ -154,7 +97,7 @@ app.patch("/api/items/:id", async (req, res) => {
   res.json({ message: "Updated" });
 });
 
-app.delete("/api/items/:id", async (req, res) => {
+app.delete("/api/items/:id", apiKeyAuth, async (req, res) => {
   const result = await db.collection("items").deleteOne({
     _id: new ObjectId(req.params.id),
   });
@@ -166,3 +109,4 @@ app.delete("/api/items/:id", async (req, res) => {
 app.use((req, res) => {
   res.status(404).json({ error: "Endpoint not found" });
 });
+
